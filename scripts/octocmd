@@ -274,8 +274,8 @@ class OctoPrint_API(PrintProcess):
         url = "files/%s" % location
         params = {}
         if kw.get("print", False):
-            params["select"] = True
-            params["print"] = True
+            params["select"] = "1"
+            params["print"] = "1"
         fh = open(path)
         filedata = fh.read()
         params["files"] = {"file": (filename, filedata)}
@@ -308,14 +308,15 @@ class OctoPrint_API(PrintProcess):
             self.get_file(filename, **kw)
 
     def transform_gcode_to_print(self, inputfn, outputfn, **kw):
-        kw["print"] = True
+        kw["print"] = "1"
+        kw["select"] = "1"
         self.transform(inputfn, outputfn, **kw)
 
     def transform_gcode_to_upload(self, inputfn, outputfn, **kw):
         self.transform(inputfn, outputfn, **kw)
 
     def transform_gcode_to_select(self, inputfn, outputfn, **kw):
-        kw["select"] = True
+        kw["select"] = "1"
         self.transform(inputfn, outputfn, **kw) 
 
 def load_config(fn, error=True):
