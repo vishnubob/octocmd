@@ -1,7 +1,7 @@
 octocmd: command line for OctoPrint
 ===================================
 
-octocmd makes it easy to control your `OctoPrint <http://octoprint.org/>`_ server from the command line.  It understands how to process *.scad* files into *.stl* with `OpenSCAD <http://http://www.openscad.org/>`_, and *.stl* files to make *.gcode* files with `Cura <https://github.com/daid/Cura>`_.
+octocmd makes it easy to control your `OctoPrint <http://octoprint.org/>`_ server from the command line.  It understands how to process .scad files into .stl with `OpenSCAD <http://http://www.openscad.org/>`_, and .stl files to make .gcode files with `Cura <https://github.com/daid/Cura>`_.
 
 ============
 Installation
@@ -26,7 +26,7 @@ Configuration
 =============
 
 Before you can start using octocmd, you have to configure it first.  It reads a
-config file called *.octoprint.conf* from your home directory.  You can either
+config file called .octoprint.conf from your home directory.  You can either
 create it by hand or you can have octocmd do it for you by running the **init**
 sub-command:
 
@@ -65,8 +65,8 @@ You can print files with OctoPrint using the **print** sub-command.
     $ octocmd print rabbit.gcode
     [Tue May 20 22:05:51 2014 octocmd] uploading, selecting, printing rabbit.gcode on OctoPrint
 
-If you try to print from a *.scad* file, or a *.stl* file, octocmd will
-automatically convert the file to a *.gcode* file before uploading it to the
+If you try to print from a .scad file, or a .stl file, octocmd will
+automatically convert the file to a .gcode file before uploading it to the
 OctoPrint server:
 
 ::
