@@ -21,7 +21,8 @@ def configure_logger(name=None, debug=False):
     logger.setLevel(level)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(message)s")
+    datefmt='%c'
+    formatter = logging.Formatter("[%(asctime)s %(name)s] %(message)s",  datefmt=datefmt)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
@@ -121,8 +122,6 @@ class PrintProcess(object):
     def transform(self, inputfn, outputfn, **args):
         if not self.stale(inputfn, outputfn):
             return True
-        msg = "%s -> %s" % (inputfn, outputfn)
-        logger.info(msg)
         self._transform(inputfn, outputfn, **args)
         return not self.stale(inputfn, outputfn)
     
@@ -163,6 +162,8 @@ class Cura_API(PrintCommand):
         if kw.get("slice", True):
             args.append("-s")
         args.append("-o %s %s" % (outputfn, inputfn))
+        msg = "generating '%s' with Cura" % outputfn
+        logger.info(msg)
         self.run(args)
 
     def transform_stl_to_gcode(self, *args, **kw):
@@ -176,6 +177,8 @@ class OpenSCAD_API(PrintCommand):
         if kw.get("make", True):
             args.append("-m make")
         args.append("-o %s %s" % (outputfn, inputfn))
+        msg = "generating '%s' with OpenSCAD" % outputfn
+        logger.info(msg)
         self.run(args)
 
     def transform_scad_to_dxf(self, *args, **kw):
@@ -205,8 +208,6 @@ class OctoPrint_API(PrintProcess):
     def session(self):
         if not self._session:
             self._session = requests.Session()
-            # XXX: provide authentication
-            # self._session.auth = ('user', 'pass')
             self._session.params.update(apikey=self.key)
             res = self._session.get(self.url)
         return self._session
@@ -297,9 +298,18 @@ class OctoPrint_API(PrintProcess):
     ## transform API
     def _transform(self, inputfn, outputfn, **kw):
         filename = os.path.split(inputfn)[-1]
+        actions = []
         if os.path.exists(inputfn):
             stale = self.stale(inputfn, outputfn, filename=filename, **kw)
             kw["upload"] = kw.get("upload", stale)
+        if kw.get("upload"):
+            actions.append("uploading")
+        if kw.get("select"):
+            actions.append("selecting")
+        if kw.get("print"):
+            actions.append("printing")
+        msg = "%s %s on OctoPrint" % (str.join(', ', actions), filename)
+        logger.info(msg)
         if kw["upload"]:
             if self.has_file(filename, **kw):
                 self.delete_file(filename, **kw)
@@ -390,15 +400,31 @@ def process_status(args):
     res = op.get_state(error=True)
 
     def format_status(obj, level=0):
+        def header(level):
+            return '    ' * level
         rpt = ''
+        vals = []
         for key in obj:
+            if key == "text":
+                continue
             val = obj[key]
-            rpt += ('==' * level) + ' ' * min(1, level)
             if type(val) == dict:
-                rpt += '%s:\n' % key
+                if vals:
+                    rpt += header(vals[0]) + str.join(', ', vals[1:]) + '\n'
+                rpt += '%s%s: ' % (header(level), key)
+                if "text" in obj[key]:
+                    rpt += '%s\n' % obj[key]["text"]
+                elif any([type(i) == dict for i in val.values()]): 
+                    rpt += '\n'
                 rpt += format_status(val, level + 1)
+                vals = []
             else:
-                rpt += '%s: %s\n' % (key, val)
+                val = '%s=%s' % (key, val)
+                if not vals:
+                    vals.append(level)
+                vals.append(val)
+        if vals:
+            rpt += str.join(', ', vals[1:]) + '\n'
         return rpt
 
     print format_status(res)
@@ -412,16 +438,10 @@ def process_init(args):
     cache = load_config(args.config, error=False)
     complete = False
     while not complete:
-        if 'OctoPrint_URL' in cache:
-            msg = "Please enter your OctoPrint URL [%s]: " % cache['OctoPrint_URL']
-        else:
-            msg = "Please enter your OctoPrint URL: "
+        msg = "OctoPrint URL%s: " % ("[%(OctoPrint_URL)s]" % cache if 'OctoPrint_URL' in cache else '')
         url = raw_input(msg)
         url = url or cache.get("OctoPrint_URL", None)
-        if 'OctoAPI_KEY' in cache:
-            msg = "Please enter your OctoPrint API KEY [%s]: " % cache['OctoAPI_KEY']
-        else:
-            msg = "Please enter your OctoPrint API KEY: "
+        msg = "OctoPrint API Key%s: " % ("[%(OctoAPI_KEY)s]" % cache if 'OctoAPI_KEY' in cache else '')
         apikey = raw_input(msg)
         apikey = apikey or cache.get("OctoAPI_KEY", None)
         cache = {"OctoAPI_KEY": apikey, "OctoPrint_URL": url}
