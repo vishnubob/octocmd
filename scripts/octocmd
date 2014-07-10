@@ -103,6 +103,7 @@ class PrintProcess(object):
     FunctionTemplate = re.compile("transform_(.+)_to_(.+)")
 
     def __init__(self, *args, **kw):
+        self.phony = kw.get("phony", False)
         self._extmap = None
 
     @property
@@ -120,10 +121,9 @@ class PrintProcess(object):
         return self._extmap
 
     def transform(self, inputfn, outputfn, **args):
-        if not self.stale(inputfn, outputfn):
-            return True
-        self._transform(inputfn, outputfn, **args)
-        return not self.stale(inputfn, outputfn)
+        if self.phony or self.stale(inputfn, outputfn):
+            self._transform(inputfn, outputfn, **args)
+        return self.stale(inputfn, outputfn)
     
     def _transform(self, inputfn, outputfn, **args):
         touch(outputfn)
@@ -192,7 +192,7 @@ class OpenSCAD_API(PrintCommand):
 
 class OctoPrint_API(PrintProcess):
     def __init__(self, *args, **kw):
-        super(OctoPrint_API, self).__init__(*args, **kw)
+        super(OctoPrint_API, self).__init__(*args, phony=True, **kw)
         self._config = kw["config"]
         self._session = None
 
