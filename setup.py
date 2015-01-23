@@ -1,11 +1,8 @@
 import sys
 import os
 from setuptools import setup
-from pip.req import parse_requirements
 from setuptools.command.install import install
 
-install_requires = parse_requirements(os.path.join(os.path.split(__file__)[0], "requirements.txt"))
-install_requires = [str(ir.req) for ir in install_requires]
 
 class my_install(install):
     def run(self):
@@ -21,7 +18,9 @@ s = setup(
     description='Command line interface for OctoPrint',
     keywords=['OctoPrint', 'command'],
     scripts=["scripts/octocmd"],
-    install_requires=install_requires,
+    install_requires=[
+        "requests",
+    ],
     packages=None,
     cmdclass={'install': my_install}
 )
