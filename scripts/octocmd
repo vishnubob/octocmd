@@ -153,7 +153,7 @@ class PrintCommand(PrintProcess):
         os.system(cmd)
         
 class Cura_API(PrintCommand):
-    Command = "Cura"
+    Command = "cura"
 
     def _transform(self, inputfn, outputfn, **kw):
         args = []
@@ -170,7 +170,7 @@ class Cura_API(PrintCommand):
         self.transform(*args, **kw)
 
 class OpenSCAD_API(PrintCommand):
-    Command = "OpenSCAD"
+    Command = "openscad"
 
     def _transform(self, inputfn, outputfn, **kw):
         args = []
