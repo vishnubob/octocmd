@@ -10,6 +10,7 @@ import argparse
 import requests
 import json
 import pprint
+import time
 
 logger = None
 
@@ -25,6 +26,14 @@ def configure_logger(name=None, debug=False):
     formatter = logging.Formatter("[%(asctime)s %(name)s] %(message)s",  datefmt=datefmt)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
+    if debug:
+        try:
+            import http.client as http_client
+        except ImportError:
+            # Python 2
+            import httplib as http_client
+            http_client.HTTPConnection.debuglevel = 1
+
 
 def which(program):
     def is_qualified_exe(fpath):
@@ -195,6 +204,7 @@ class OctoPrint_API(PrintProcess):
         super(OctoPrint_API, self).__init__(*args, phony=True, **kw)
         self._config = kw["config"]
         self._session = None
+        self.location = "sdcard" if kw["sdcard"] else "local"
 
     @property
     def key(self):
@@ -208,8 +218,8 @@ class OctoPrint_API(PrintProcess):
     def session(self):
         if not self._session:
             self._session = requests.Session()
-            self._session.params.update(apikey=self.key)
-            res = self._session.get(self.url)
+            self._session.headers["X-Api-Key"] = self.key
+            self._session.keep_alive = False
         return self._session
 
     @property
@@ -221,10 +231,16 @@ class OctoPrint_API(PrintProcess):
         logger.debug(msg)
         return self.session.get(self.url + url, params=args)
 
-    def post(self, url, files=None, **args):
+    def post(self, url, files=None, data=None):
         msg = "POST %s args=%s files=%s" % (url, args, 0 if not files else len(files))
         logger.debug(msg)
-        return self.session.post(self.url + url, files=files, params=args)
+        kw = {}
+        if files:
+            kw["files"] = files
+        if data != None:
+            kw["data"] = json.dumps(data)
+            kw["headers"] = {"content-type": "application/json"}
+        return self.session.post(self.url + url, **kw)
 
     def delete(self, url, **args):
         msg = "DELETE %s %s" % (url, args)
@@ -232,8 +248,7 @@ class OctoPrint_API(PrintProcess):
         return self.session.delete(self.url + url, params=args)
 
     ## utils
-    def check_response(self, res, code, **kw):
-        error = kw.get("error", False)
+    def check_response(self, res, code, error=False, **kw):
         failure = (res.status_code != code)
         if failure:
             if error:
@@ -247,14 +262,10 @@ class OctoPrint_API(PrintProcess):
             pass
         return res
 
-    def get_location(self, sdcard=False, **kw):
-        return "sdcard" if sdcard else "local"
-    
-    def stale(self, inputfn, outputfn, sdcard=False, filename=None, **kw):
+    def stale(self, inputfn, outputfn, filename=None, **kw):
         stale = True
         filename = filename or os.path.split(inputfn)[-1]
-        location = self.get_location(sdcard=sdcard)
-        file_info = self.get_file(filename, location=location, error=False)
+        file_info = self.get_file(filename, error=False)
         if file_info:
             stale = os.path.getmtime(inputfn) > file_info["date"]
         return stale
@@ -264,30 +275,27 @@ class OctoPrint_API(PrintProcess):
         info = self.get_file(filename, **kw)
         return bool(info)
     
-    def get_file(self, filename, **kw):
-        location = self.get_location(**kw)
-        url = str.join('/', ("files", location, filename))
-        res = self.get(url)
-        return self.check_response(res, 200, **kw)
+    def get_file(self, filename, error=False, **kw):
+        url = str.join('/', ("files", self.location, filename))
+        res = self.get(url, **kw)
+        return self.check_response(res, 200, error=error, **kw)
 
-    def post_file(self, path, filename, error=True, sdcard=False, **kw):
-        location = self.get_location(sdcard=sdcard)
-        url = "files/%s" % location
+    def post_file(self, path, filename, upload=False, error=True, data=None, **kw):
         params = {}
-        if kw.get("print", False):
-            params["select"] = "1"
-            params["print"] = "1"
-        fh = open(path)
-        filedata = fh.read()
-        params["files"] = {"file": (filename, filedata)}
+        if upload:
+            url = "files/%s" % self.location
+            fh = open(path)
+            filedata = fh.read()
+            params["files"] = {"file": (filename, filedata)}
+        else:
+            url = "files/%s/%s" % (self.location, filename)
+        if data != None:
+            params["data"] = data
         res = self.post(url, **params)
-        fh = open("content.txt", 'w')
-        fh.write(str(res.content))
         return self.check_response(res, 201, **kw)
     
     def delete_file(self, filename, **kw):
-        location = self.get_location(**kw)
-        url = "files/%s/%s" % (location, filename)
+        url = "files/%s/%s" % (self.location, filename)
         res = self.delete(url)
         return self.check_response(res, 204, **kw)
 
@@ -296,43 +304,54 @@ class OctoPrint_API(PrintProcess):
         return self.check_response(res, 200, **kw)
 
     ## transform API
-    def _transform(self, inputfn, outputfn, **kw):
+    def _transform(self, inputfn, outputfn, upload=False, select=False, _print=False, **kw):
         filename = os.path.split(inputfn)[-1]
         actions = []
+        params = {}
         if os.path.exists(inputfn):
             stale = self.stale(inputfn, outputfn, filename=filename, **kw)
-            kw["upload"] = kw.get("upload", stale)
-        if kw.get("upload"):
+            upload = upload or stale
+        if upload:
             actions.append("uploading")
-        if kw.get("select"):
+        if _print or select:
+            select = True
             actions.append("selecting")
-        if kw.get("print"):
+        if _print:
             actions.append("printing")
         msg = "%s %s on OctoPrint" % (str.join(', ', actions), filename)
         logger.info(msg)
-        if kw["upload"]:
-            if self.has_file(filename, **kw):
-                self.delete_file(filename, **kw)
-            self.post_file(inputfn, filename=filename, **kw)
+        if upload:
+            if self.has_file(filename):
+                self.delete_file(filename)
+            self.post_file(inputfn, filename=filename, upload=True)
+            time.sleep(1)
         else:
-            self.get_file(filename, **kw)
+            params = {}
+            if select:
+                params["command"] = "select"
+                if _print:
+                    params["print"] = True
+            self.post_file(inputfn, filename=filename, data=params)
 
     def transform_gcode_to_print(self, inputfn, outputfn, **kw):
-        kw["print"] = "1"
-        kw["select"] = "1"
+        kw["_print"] = True
+        kw["select"] = True
         self.transform(inputfn, outputfn, **kw)
 
     def transform_gcode_to_upload(self, inputfn, outputfn, **kw):
         self.transform(inputfn, outputfn, **kw)
 
     def transform_gcode_to_select(self, inputfn, outputfn, **kw):
-        kw["select"] = "1"
+        kw["select"] = True
         self.transform(inputfn, outputfn, **kw) 
 
 def load_config(fn, error=True):
     try:
         fh = open(fn)
-        return json.loads(fh.read())
+        config = json.loads(fh.read())
+        while config["OctoPrint_URL"].endswith('/'):
+            config["OctoPrint_URL"] = config["OctoPrint_URL"][:-1]
+        return config
     except:
         if error:
             msg = "Missing config, please run '%s init' first" % sys.argv[0]
@@ -359,6 +378,7 @@ def get_cli():
     parser = argparse.ArgumentParser(description='octoprint command')
     parser.add_argument('-d', '--debug', default=False, action="store_true", help='enable debugging')
     parser.add_argument('-c', '--config', help='path to octocmd configuration file')
+    parser.add_argument('-s', '--sdcard', default=False, action="store_true", help='Use sdcard instead of local storage')
 
     subparsers = parser.add_subparsers(help='sub-command help', dest="mode")
     # create the parser for the "init" command
