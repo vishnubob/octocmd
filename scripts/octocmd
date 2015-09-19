@@ -204,7 +204,7 @@ class OctoPrint_API(PrintProcess):
         super(OctoPrint_API, self).__init__(*args, phony=True, **kw)
         self._config = kw["config"]
         self._session = None
-        self.location = "sdcard" if kw["sdcard"] else "local"
+        self.location = "sdcard" if kw.get("sdcard", False) else "local"
 
     @property
     def key(self):
@@ -212,6 +212,8 @@ class OctoPrint_API(PrintProcess):
 
     @property
     def url(self):
+        while self.config["OctoPrint_URL"].endswith('/'):
+            self.config["OctoPrint_URL"] = self.config["OctoPrint_URL"][:-1]
         return (self.config["OctoPrint_URL"] + "/api/")
 
     @property
@@ -349,8 +351,6 @@ def load_config(fn, error=True):
     try:
         fh = open(fn)
         config = json.loads(fh.read())
-        while config["OctoPrint_URL"].endswith('/'):
-            config["OctoPrint_URL"] = config["OctoPrint_URL"][:-1]
         return config
     except:
         if error:
